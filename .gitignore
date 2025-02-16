@@ -5,7 +5,11 @@ iPASSR/predicted_results
 iPASSR/results
 SSRDEFNet-PyTorch/__pycache__
 SSRDEFNet-PyTorch/checkpoints
-SSRDEFNet-PyTorch/data
+SSRDEFNet-PyTorch/data/train/*
+SSRDEFNet-PyTorch/data/test/Flickr1024
+SSRDEFNet-PyTorch/data/test/KITTI2012
+SSRDEFNet-PyTorch/data/test/KITTI2015
+SSRDEFNet-PyTorch/data/test/Middlebury
 SSRDEFNet-PyTorch/figs
 SSRDEFNet-PyTorch/MyCode
 SSRDEFNet-PyTorch/results

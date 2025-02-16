@@ -6,10 +6,7 @@ iPASSR/results
 SSRDEFNet-PyTorch/__pycache__
 SSRDEFNet-PyTorch/checkpoints
 SSRDEFNet-PyTorch/data/train/*
-SSRDEFNet-PyTorch/data/test/Flickr1024
-SSRDEFNet-PyTorch/data/test/KITTI2012
-SSRDEFNet-PyTorch/data/test/KITTI2015
-SSRDEFNet-PyTorch/data/test/Middlebury
+SSRDEFNet-PyTorch/data/test/*
 SSRDEFNet-PyTorch/figs
 SSRDEFNet-PyTorch/MyCode
 SSRDEFNet-PyTorch/results

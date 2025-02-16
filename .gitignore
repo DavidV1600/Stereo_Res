@@ -1,0 +1,11 @@
+.venv
+iPASSR/__pycache__
+iPASSR/log
+iPASSR/predicted_results
+iPASSR/results
+SSRDEFNet-PyTorch/__pycache__
+SSRDEFNet-PyTorch/checkpoints
+SSRDEFNet-PyTorch/data
+SSRDEFNet-PyTorch/figs
+SSRDEFNet-PyTorch/MyCode
+SSRDEFNet-PyTorch/results

@@ -24,7 +24,7 @@ class SSRDEFNet_with_MHCA(nn.Module):
         self.init_feature = nn.Conv2d(3, 64, 3, 1, 1, bias=True)
         self.deep_feature = RDG(G0=64, C=4, G=24, n_RDB=4)
 
-        self.mhca1 = MHCA(n_feats=64, ratio=4)
+        self.mhca1 = MHCA(n_feats=128, ratio=4)
 
         self.pam = PAM(64)
         self.transition = nn.Sequential(
@@ -85,8 +85,10 @@ class SSRDEFNet_with_MHCA(nn.Module):
         buffer_left = self.deep_feature(buffer_left)
         buffer_right = self.deep_feature(buffer_right)
 
-        buffer_left = self.mhca1(buffer_left)
-        buffer_right = self.mhca1(buffer_right)
+        buffer_concat = torch.cat([buffer_left, buffer_right], dim=1)  # Concatenate along channel dimension
+        buffer_attended = self.mhca1(buffer_concat)
+
+        buffer_left, buffer_right = torch.chunk(buffer_attended, 2, dim=1)
 
         stereo_left = self.StereoFea(self.transition(buffer_left))
         stereo_right = self.StereoFea(self.transition(buffer_right))

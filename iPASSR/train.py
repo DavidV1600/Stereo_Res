@@ -91,7 +91,7 @@ def train(train_loader, val_loader, cfg):
 
 def main(cfg):
     train_set = TrainSetLoader(cfg)
-    val_size = 100
+    val_size = 50
     train_size = len(train_set) - val_size
     train_subset, val_subset = random_split(train_set, [train_size, val_size])
     train_loader = DataLoader(dataset=train_subset, num_workers=6, batch_size=cfg.batch_size, shuffle=True)

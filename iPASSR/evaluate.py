@@ -17,10 +17,12 @@ def evaluate():
     stereo_boundary = 64  # Cropping left 64 pixels in the left view for evaluation
     image_boundary = 0  # Cropping image boundaries for evaluation
     Datasets = ['Flickr1024', 'KITTI2012', 'KITTI2015', 'Middlebury']
-    Datasets = ['KITTI2012']
+    #Datasets = ['KITTI2012']
     GT_folder = '/home/david/PycharmProjects/SSRDEF-Net/SSRDEFNet-PyTorch/data/test/'
     #ResultsPath = f'./results/{Method}_small_lr_4xSR_epoch81'
-    ResultsPath = f'./results/{Method}_Tuned_{factor}xSR_epoch1'
+    ResultsPath = f'./results/{Method}_MMHCA3_4xSR_epoch2'
+    ResultsPath = f'./results/{Method}_MMHCA4_4xSR_iter1801'
+    #ResultsPath = f'./results/{Method}_{factor}xSR'
     print(ResultsPath)
     for DatasetName in Datasets:
         GT_DataFolder = os.path.join(GT_folder, DatasetName, 'hr')

@@ -17,13 +17,16 @@ class Net_with_MHCA(nn.Module):
         self.pam = PAM(64)
         self.fusion = nn.Sequential(
             RDB(G0=128, C=4, G=32),
+            #MHCA(n_feats=128, ratio=2),  # Enhanced MHCA Sa rezolv problema ca nu gaseste parametri daca vreau sa il pun
             CALayer(128),
             nn.Conv2d(128, 64, kernel_size=1, stride=1, padding=0, bias=True))
 
-        self.mhca = MHCA(n_feats=64, ratio=4)
+        self.mhca = MHCA(n_feats=128, ratio=4)
+        self.last_mhca = MHCA(n_feats=6, ratio=2)
 
         self.reconstruct = RDG(G0=64, C=4, G=24, n_RDB=4)
         self.upscale = nn.Sequential(
+            #MHCA(n_feats=64, ratio=2),  # Enhanced MHCA
             nn.Conv2d(64, 64 * upscale_factor ** 2, 1, 1, 0, bias=True),
             nn.PixelShuffle(upscale_factor),
             nn.Conv2d(64, 3, 3, 1, 1, bias=True))
@@ -33,6 +36,13 @@ class Net_with_MHCA(nn.Module):
         x_right_upscale = F.interpolate(x_right, scale_factor=self.upscale_factor, mode='bicubic', align_corners=False)
         buffer_left = self.init_feature(x_left)
         buffer_right = self.init_feature(x_right)
+
+        buffer_concat2 = torch.cat([buffer_left, buffer_right], dim=1)  # Concatenate along channel dimension
+        buffer_attended2 = self.mhca(buffer_concat2)
+
+        # Split the features back into left and right components
+        buffer_left, buffer_right = torch.chunk(buffer_attended2, 2, dim=1)
+
         buffer_left, catfea_left = self.deep_feature(buffer_left)
         buffer_right, catfea_right = self.deep_feature(buffer_right)
 
@@ -46,13 +56,23 @@ class Net_with_MHCA(nn.Module):
         buffer_leftF = self.fusion(torch.cat([buffer_left, buffer_leftT], dim=1))
         buffer_rightF = self.fusion(torch.cat([buffer_right, buffer_rightT], dim=1))
 
-        buffer_leftF = self.mhca(buffer_leftF)
-        buffer_rightF = self.mhca(buffer_rightF)
+        # buffer_concat = torch.cat([buffer_leftF, buffer_rightF], dim=1)  # Concatenate along channel dimension
+        # buffer_attended = self.mhca(buffer_concat)
+
+        # # Split the features back into left and right components
+        # buffer_leftF, buffer_rightF = torch.chunk(buffer_attended, 2, dim=1)
+
 
         buffer_leftF, _ = self.reconstruct(buffer_leftF)
         buffer_rightF, _ = self.reconstruct(buffer_rightF)
         out_left = self.upscale(buffer_leftF) + x_left_upscale
         out_right = self.upscale(buffer_rightF) + x_right_upscale
+
+        # out_concat = torch.cat([out_left, out_right], dim=1)  # Concatenate along channel dimension
+        # out_attended = self.last_mhca(out_concat)
+
+        # out_left, out_right = torch.chunk(out_attended, 2, dim=1)
+
 
         if is_training == 1:
             return out_left, out_right, (M_right_to_left, M_left_to_right), (V_left, V_right)
@@ -78,13 +98,12 @@ class RDB(nn.Module):
             convs.append(one_conv(G0+i*G, G))
         self.conv = nn.Sequential(*convs)
         self.LFF = nn.Conv2d(G0+C*G, G0, kernel_size=1, stride=1, padding=0, bias=True)
-        self.mhca = MHCA(n_feats=G0, ratio=4) if use_mhca else None
+        #self.mhca = MHCA(n_feats=G0, ratio=2) if use_mhca else None
 
     def forward(self, x):
         out = self.conv(x)
         lff = self.LFF(out)
-        if self.mhca is not None:
-            lff = self.mhca(lff)
+        #lff = self.mhca(lff)
         return lff + x
 
 
@@ -98,6 +117,8 @@ class RDG(nn.Module):
         self.RDB = nn.Sequential(*RDBs)
         self.conv = nn.Conv2d(G0*n_RDB, G0, kernel_size=1, stride=1, padding=0, bias=True)
 
+        #self.mhca = MHCA(n_feats=G0, ratio=2) if use_mhca else None
+
     def forward(self, x):
         buffer = x
         temp = []
@@ -106,6 +127,9 @@ class RDG(nn.Module):
             temp.append(buffer)
         buffer_cat = torch.cat(temp, dim=1)
         out = self.conv(buffer_cat)
+
+        # out = self.mhca(out)
+
         return out, buffer_cat
 
 
@@ -147,8 +171,17 @@ class PAM(nn.Module):
         self.rb = ResB(4 * channels)
         self.bn = nn.BatchNorm2d(4 * channels)
 
+        #self.mhca = MHCA(8 * channels, 4 * channels)
+
     def __call__(self, x_left, x_right, catfea_left, catfea_right, is_training):
         b, c0, h0, w0 = x_left.shape
+
+        # catfea_concat = torch.cat([catfea_left, catfea_right], dim=1)  # Concatenate along channel dimension
+        # catfea_attended = self.mhca(catfea_concat)
+
+        # catfea_left, catfea_right = torch.chunk(catfea_attended, 2, dim=1)
+
+
         Q = self.bq(self.rb(self.bn(catfea_left)))
         b, c, h, w = Q.shape
         Q = Q - torch.mean(Q, 3).unsqueeze(3).repeat(1, 1, 1, w)

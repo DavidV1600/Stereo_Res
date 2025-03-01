@@ -30,11 +30,11 @@ def parse_args():
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
     parser.add_argument('--n_epochs', type=int, default=100, help='number of epochs to train')
     parser.add_argument('--n_steps', type=int, default=10, help='number of epochs to update learning rate')
-    parser.add_argument('--trainset_dir', type=str, default='./data/train/Kitty_patches')
+    parser.add_argument('--trainset_dir', type=str, default='./data/train/m_files')
     parser.add_argument('--model_name', type=str, default='SSRDEF_with_MHCA')
     parser.add_argument('--load_pretrain', type=bool, default=True)
     parser.add_argument('--model_path', type=str, default='./checkpoints/SSRDEF_4xSR_epoch80.pth.tar')
-    parser.add_argument('--mhca_model_path', type=str, default='./checkpoints/SSRDEF_with_MHCA_4xSR_epoch90.pth.tar')
+    #parser.add_argument('--mhca_model_path', type=str, default='./checkpoints/SSRDEF_with_MHCA_4xSR_epoch90.pth.tar')
     parser.add_argument('--testset_dir', type=str, default='./data/test/')
     return parser.parse_args()
 
@@ -122,8 +122,8 @@ def train(train_loader, cfg):
     torch.backends.cudnn.benchmark = True
 
     if cfg.load_pretrain:
-        if os.path.isfile(cfg.mhca_model_path):
-            model = torch.load(cfg.mhca_model_path)  # Load pretrained weights
+        if os.path.isfile(cfg.model_path):
+            model = torch.load(cfg.model_path)  # Load pretrained weights
             state_dict = model['state_dict']
 
             # Remove 'module.' prefix from keys
@@ -151,7 +151,7 @@ def train(train_loader, cfg):
     psnr_epoch_r = []
     psnr_epoch_m = []
     psnr_epoch_r_m = []
-
+    print(len(train_loader))
     for idx_epoch in range(cfg.start_epoch, cfg.n_epochs):
 
         for idx_iter, (HR_left, HR_right, LR_left, LR_right) in enumerate(train_loader):
@@ -345,6 +345,7 @@ def train(train_loader, cfg):
                                            SR_right2[:, :, :, :HR_right.shape[3] - 30].data.cpu()))
             loss_epoch.append(loss.data.cpu())
             if idx_iter % 300 == 0:
+                print(idx_iter)
                 print(
                     "SRloss: {:.4f} Photoloss: {:.5f} Smoothloss: {:.5f} Cycleloss: {:.5f} Consloss: {:.5f} Ploss: {:.5f} Sloss: {:.5f}".format(
                         loss_SR.item(), 0.1 * loss_photo.item(), 0.1 * loss_smooth.item(), 0.1 * loss_cycle.item(),

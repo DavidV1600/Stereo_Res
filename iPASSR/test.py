@@ -11,7 +11,7 @@ def parse_args():
     parser.add_argument('--testset_dir', type=str, default='/home/david/PycharmProjects/SSRDEF-Net/SSRDEFNet-PyTorch/data/test/')
     parser.add_argument('--scale_factor', type=int, default=4)
     parser.add_argument('--device', type=str, default='cuda:0')
-    parser.add_argument('--model_name', type=str, default='iPASSR_small_lr_4xSR_epoch81')
+    parser.add_argument('--model_name', type=str, default='iPASSR_4xSR')
     return parser.parse_args()
 
 
@@ -43,7 +43,7 @@ def test(cfg):
 if __name__ == '__main__':
     cfg = parse_args()
     dataset_list = ['Flickr1024', 'KITTI2012', 'KITTI2015', 'Middlebury']
-    dataset_list = ['KITTI2012']
+    #dataset_list = ['KITTI2012']
     for i in range(len(dataset_list)):
         cfg.dataset = dataset_list[i]
         test(cfg)

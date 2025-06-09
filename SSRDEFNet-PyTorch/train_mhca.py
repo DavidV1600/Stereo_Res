@@ -10,6 +10,9 @@ import os
 import torch.nn.functional as F
 from loss import *
 
+import warnings
+warnings.filterwarnings("ignore")
+
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2,3'
 
@@ -24,17 +27,17 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scale_factor", type=int, default=4)
     parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--batch_size', type=int, default=2)
     parser.add_argument('--lr', type=float, default=2e-5, help='initial learning rate')
     parser.add_argument('--gamma', type=float, default=0.5, help='')
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
     parser.add_argument('--n_epochs', type=int, default=100, help='number of epochs to train')
     parser.add_argument('--n_steps', type=int, default=10, help='number of epochs to update learning rate')
-    parser.add_argument('--trainset_dir', type=str, default='./data/train/Kitty_patches')
-    parser.add_argument('--model_name', type=str, default='SSRDEF_with_MHCA')
+    parser.add_argument('--trainset_dir', type=str, default='./data/train/m_files')
+    parser.add_argument('--model_name', type=str, default='SSRDEF_with_MHCA_f2')
     parser.add_argument('--load_pretrain', type=bool, default=True)
     parser.add_argument('--model_path', type=str, default='./checkpoints/SSRDEF_4xSR_epoch80.pth.tar')
-    parser.add_argument('--mhca_model_path', type=str, default='./checkpoints/SSRDEF_with_MHCA_4xSR_epoch90.pth.tar')
+    #parser.add_argument('--mhca_model_path', type=str, default='./checkpoints/SSRDEF_with_MHCA_4xSR_epoch90.pth.tar')
     parser.add_argument('--testset_dir', type=str, default='./data/test/')
     return parser.parse_args()
 
@@ -114,7 +117,6 @@ def load_pretrain(model, pretrained_dict):
 
 
 def train(train_loader, cfg):
-    source_net = SSRDEFNet_with_MHCA(cfg.scale_factor).cuda()  # Original model
     target_net = SSRDEFNet_with_MHCA(cfg.scale_factor).cuda()  # New model
 
     scale = cfg.scale_factor
@@ -122,16 +124,13 @@ def train(train_loader, cfg):
     torch.backends.cudnn.benchmark = True
 
     if cfg.load_pretrain:
-        if os.path.isfile(cfg.mhca_model_path):
-            model = torch.load(cfg.mhca_model_path)  # Load pretrained weights
+        if os.path.isfile(cfg.model_path):
+            model = torch.load(cfg.model_path)  # Load pretrained weights
             state_dict = model['state_dict']
 
             # Remove 'module.' prefix from keys
             new_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
-            source_net.load_state_dict(new_state_dict)  # Load into source model
-
-            # Copy weights to target model
-            target_net.load_state_dict(source_net.state_dict(), strict=False)
+            target_net.load_state_dict(new_state_dict, strict=False)
 
             cfg.start_epoch = model["epoch"]
             print("=> Successfully transferred weights to SSRDEFFNet_with_MHCA")
@@ -140,6 +139,10 @@ def train(train_loader, cfg):
 
 
     net = target_net
+
+    # for name, param in net.named_parameters():
+    #     if "mhca" not in name:  # Freeze all layers except MHCA layers
+    #         param.requires_grad = False
     # net = torch.nn.DataParallel(net, device_ids=[0, 1])
     criterion_L1 = torch.nn.L1Loss().cuda()
     optimizer = torch.optim.Adam([paras for paras in net.parameters() if paras.requires_grad == True], lr=cfg.lr)
@@ -151,7 +154,7 @@ def train(train_loader, cfg):
     psnr_epoch_r = []
     psnr_epoch_m = []
     psnr_epoch_r_m = []
-
+    print("LENGTH OF DATA", len(train_loader))
     for idx_epoch in range(cfg.start_epoch, cfg.n_epochs):
 
         for idx_iter, (HR_left, HR_right, LR_left, LR_right) in enumerate(train_loader):
@@ -344,36 +347,16 @@ def train(train_loader, cfg):
             psnr_epoch_r_m.append(cal_psnr(HR_right[:, :, :, :HR_right.shape[3] - 30].data.cpu(),
                                            SR_right2[:, :, :, :HR_right.shape[3] - 30].data.cpu()))
             loss_epoch.append(loss.data.cpu())
+            if idx_iter % 100 == 0:
+                print("ITERERATION: ", idx_iter)
+                print("SRloss:, ", loss_SR.item())
+
             if idx_iter % 300 == 0:
-                print(
-                    "SRloss: {:.4f} Photoloss: {:.5f} Smoothloss: {:.5f} Cycleloss: {:.5f} Consloss: {:.5f} Ploss: {:.5f} Sloss: {:.5f}".format(
-                        loss_SR.item(), 0.1 * loss_photo.item(), 0.1 * loss_smooth.item(), 0.1 * loss_cycle.item(),
-                        0.1 * loss_cons.item(), 0.02 * loss_P.item(), 0.001 * loss_S.item()))
-                print(torch.mean(V_left2))
-                print(torch.mean(V_left4))
+                torch.save({'epoch': idx_epoch + 1, 'state_dict': net.state_dict()},
+                    'checkpoints/' + cfg.model_name + '_' + str(cfg.scale_factor) + 'xSR_epoch' + str(
+                        idx_epoch + 11) + str(idx_iter + 1) + '.pth.tar')
 
         scheduler.step()
-
-        if idx_epoch % 1 == 0:
-            loss_list.append(float(np.array(loss_epoch).mean()))
-
-            print('Epoch--%4d, loss--%f, loss_SR--%f, loss_photo--%f, loss_smooth--%f, loss_cycle--%f, loss_cons--%f' %
-                  (idx_epoch + 1, float(np.array(loss_epoch).mean()), float(np.array(loss_SR.data.cpu()).mean()),
-                   float(np.array(loss_photo.data.cpu()).mean()), float(np.array(loss_smooth.data.cpu()).mean()),
-                   float(np.array(loss_cycle.data.cpu()).mean()), float(np.array(loss_cons.data.cpu()).mean())))
-            print('PSNR left---%f, PSNR right---%f' % (
-            float(np.array(psnr_epoch).mean()), float(np.array(psnr_epoch_r).mean())))
-            print('intermediate PSNR left---%f, PSNR right---%f' % (
-            float(np.array(psnr_epoch_m).mean()), float(np.array(psnr_epoch_r_m).mean())))
-            loss_epoch = []
-            psnr_epoch = []
-            psnr_epoch_r = []
-            psnr_epoch_m = []
-            psnr_epoch_r_m = []
-
-        torch.save({'epoch': idx_epoch + 1, 'state_dict': net.state_dict()},
-                   'checkpoints/' + cfg.model_name + '_' + str(cfg.scale_factor) + 'xSR_epoch' + str(
-                       idx_epoch + 1) + '.pth.tar')
 
 
 def main(cfg):

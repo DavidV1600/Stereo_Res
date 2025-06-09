@@ -13,22 +13,41 @@ import torch.backends.cudnn as cudnn
 import argparse
 from utils import *
 from model import *
+import torch.nn as nn
+import torch.nn.functional as F
+from torchvision.models import vgg16
+from torch.utils.data import ConcatDataset
+
+
+class PerceptualLoss(nn.Module):
+    def __init__(self):
+        super(PerceptualLoss, self).__init__()
+        self.vgg = torchvision.models.vgg16(pretrained=True).features[:16].eval()
+        for param in self.vgg.parameters():
+            param.requires_grad = False
+
+    def forward(self, x, y):
+        x_vgg = self.vgg(x)
+        y_vgg = self.vgg(y)
+        return F.l1_loss(x_vgg, y_vgg)
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--scale_factor", type=int, default=4)
     parser.add_argument('--device', type=str, default='cuda:0')
-    parser.add_argument('--batch_size', type=int, default=26)
-    parser.add_argument('--lr', type=float, default=1e-4, help='initial learning rate')
+    parser.add_argument('--batch_size', type=int, default=20)
+    parser.add_argument('--lr', type=float, default=2e-5, help='initial learning rate')
     parser.add_argument('--gamma', type=float, default=0.5, help='')
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
-    parser.add_argument('--n_epochs', type=int, default=2, help='number of epochs to train')
+    parser.add_argument('--n_epochs', type=int, default=10, help='number of epochs to train')
     parser.add_argument('--n_steps', type=int, default=30, help='number of epochs to update learning rate')
     parser.add_argument('--trainset_dir', type=str,
                         default='/home/david/PycharmProjects/SSRDEF-Net/SSRDEFNet-PyTorch/data/train/m_files')
-    parser.add_argument('--model_name', type=str, default='iPASSR_Tuned')  # Updated model name
+    parser.add_argument('--trainset_dir2', type=str,
+                        default='/home/david/PycharmProjects/SSRDEF-Net/SSRDEFNet-PyTorch/data/train/m2_files')
+    parser.add_argument('--model_name', type=str, default='iPASSR_MMHCA4')  # Updated model name
     parser.add_argument('--load_pretrain', type=bool, default=True)
-    #parser.add_argument('--model_path', type=str, default='log/iPASSR_with_MHCA_4xSR_epoch202.pth.tar')  # Path to pretrained iPASSR model
+    #parser.add_argument('--model_path', type=str, default='log/iPASSR_MMHCA3_4xSR_iter11801.pth.tar')  # Path to pretrained iPASSR model
     parser.add_argument('--model_path', type=str, default='log/iPASSR_4xSR.pth.tar')  # Path to pretrained iPASSR model
     return parser.parse_args()
 
@@ -58,6 +77,8 @@ def validate(val_loader, net, cfg):
 
 def train(train_loader, val_loader, cfg):
     # Initialize the new model with MHCA
+    old_net = Net(cfg.scale_factor).to(cfg.device)
+
     net = Net_with_MHCA(cfg.scale_factor).to(cfg.device)
     cudnn.benchmark = True
     scale = cfg.scale_factor
@@ -66,12 +87,14 @@ def train(train_loader, val_loader, cfg):
         if os.path.isfile(cfg.model_path):
             # Load the pretrained iPASSR model
             pretrained_dict = torch.load(cfg.model_path, map_location={'cuda:0': cfg.device})['state_dict']
-
+            old_net.load_state_dict(pretrained_dict)
             # Get the state dict of the new model
             model_dict = net.state_dict()
 
             # Filter out unnecessary keys and load pretrained parameters
-            pretrained_dict = {k: v for k, v in pretrained_dict.items()} #if k in model_dict and "mhca" not in k}
+            # pretrained_dict = {k: v for k, v in pretrained_dict.items()} #if k in model_dict and "mhca" not in k}
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+
             model_dict.update(pretrained_dict)
             net.load_state_dict(model_dict)
 
@@ -79,30 +102,38 @@ def train(train_loader, val_loader, cfg):
         else:
             print("=> no model found at '{}'".format(cfg.model_path))
 
-    # for name, param in net.named_parameters():
-    #     if "mhca" not in name:  # Freeze all layers except MHCA layers
-    #         param.requires_grad = False
-    #print("Pretrained keys:", pretrained_dict.keys())
-    #print("Model keys:", model_dict.keys())
+    for name, param in net.named_parameters():
+        if "mhca" not in name:  # Freeze all layers except MHCA layers
+            param.requires_grad = False
+    # print("Pretrained keys:", pretrained_dict.keys())
+    # print("Model keys:", model_dict.keys())
 
-    mhca_params = [p for n, p in net.named_parameters() if 'mhca' in n]
-    base_params = [p for n, p in net.named_parameters() if 'mhca' not in n]
+    # mhca_params = [p for n, p in net.named_parameters() if 'mhca' in n]
+    # base_params = [p for n, p in net.named_parameters() if 'mhca' not in n]
     # optimizer = torch.optim.Adam([
-    #     {'params': base_params, 'lr': cfg.lr * 0.1},
+    #     {'params': base_params, 'lr': cfg.lr * 0.01},
     #     {'params': mhca_params, 'lr': cfg.lr}
     # ])
     criterion_L1 = torch.nn.L1Loss().to(cfg.device)
     optimizer = torch.optim.Adam([paras for paras in net.parameters() if paras.requires_grad == True], lr=cfg.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=cfg.n_steps, gamma=cfg.gamma)
 
-    validate(val_loader, net, cfg)
+    print("Initial model:")
+    validate(val_loader, old_net, cfg)
 
     loss_epoch = []
     loss_list = []
     print(len(train_loader))
     for idx_epoch in range(cfg.start_epoch, cfg.n_epochs):
+        if idx_epoch == 1:
+            for name, param in net.named_parameters():
+                param.requires_grad = True
+            optimizer = torch.optim.Adam(net.parameters(), lr=cfg.lr)  # Update optimizer to include all parameters
+
 
         for idx_iter, (HR_left, HR_right, LR_left, LR_right) in enumerate(train_loader):
+        #     if idx_iter >= len(train_loader) // 2:  # Stop at half of train_loader size
+                # break  
             b, c, h, w = LR_left.shape
             HR_left, HR_right, LR_left, LR_right = Variable(HR_left).to(cfg.device), Variable(HR_right).to(cfg.device), \
                 Variable(LR_left).to(cfg.device), Variable(LR_right).to(cfg.device)
@@ -177,24 +208,32 @@ def train(train_loader, val_loader, cfg):
                 print("Iterations ", idx_iter)
                 validate(val_loader, net, cfg)
 
-        scheduler.step()
+            if idx_iter % 800 == 0 and idx_iter > 2:
+                torch.save({'epoch': idx_epoch + 1, 'state_dict': net.state_dict()},
+                       'log/' + cfg.model_name + '_' + str(cfg.scale_factor) + 'xSR_iter' + str(idx_epoch + 1) + str(
+                           idx_iter + 1) + '.pth.tar')
+        #scheduler.step()
 
-        if idx_epoch % 1 == 0:
-            loss_list.append(float(np.array(loss_epoch).mean()))
+        # if idx_epoch % 1 == 0:
+        #     loss_list.append(float(np.array(loss_epoch).mean()))
 
-            print('Epoch--%4d, loss--%f, loss_SR--%f, loss_photo--%f, loss_smooth--%f, loss_cycle--%f, loss_cons--%f' %
-                  (idx_epoch + 1, float(np.array(loss_epoch).mean()), float(np.array(loss_SR.data.cpu()).mean()),
-                   float(np.array(loss_photo.data.cpu()).mean()), float(np.array(loss_smooth.data.cpu()).mean()),
-                   float(np.array(loss_cycle.data.cpu()).mean()), float(np.array(loss_cons.data.cpu()).mean())))
-            torch.save({'epoch': idx_epoch + 1, 'state_dict': net.state_dict()},
-                       'log/' + cfg.model_name + '_' + str(cfg.scale_factor) + 'xSR_epoch' + str(
-                           idx_epoch + 1) + '.pth.tar')
-            loss_epoch = []
+        #     print('Epoch--%4d, loss--%f, loss_SR--%f, loss_photo--%f, loss_smooth--%f, loss_cycle--%f, loss_cons--%f' %
+        #           (idx_epoch + 1, float(np.array(loss_epoch).mean()), float(np.array(loss_SR.data.cpu()).mean()),
+        #            float(np.array(loss_photo.data.cpu()).mean()), float(np.array(loss_smooth.data.cpu()).mean()),
+        #            float(np.array(loss_cycle.data.cpu()).mean()), float(np.array(loss_cons.data.cpu()).mean())))
+        #     torch.save({'epoch': idx_epoch + 1, 'state_dict': net.state_dict()},
+        #                'log/' + cfg.model_name + '_' + str(cfg.scale_factor) + 'xSR_epoch' + str(
+        #                    idx_epoch + 1) + '.pth.tar')
+        #     loss_epoch = []
 
 
 def main(cfg):
-    train_set = TrainSetLoader(cfg)
-    val_size = 100
+    train_set = TrainSetLoader(cfg.trainset_dir, cfg.scale_factor)
+
+    #train_set2 = TrainSetLoader(cfg.trainset_dir2, cfg.scale_factor)
+    #train_set = ConcatDataset([train_set, train_set2])
+
+    val_size = 1000
     train_size = len(train_set) - val_size
     train_subset, val_subset = random_split(train_set, [train_size, val_size])
     train_loader = DataLoader(dataset=train_subset, num_workers=6, batch_size=cfg.batch_size, shuffle=True)

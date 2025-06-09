@@ -7,9 +7,9 @@ import numpy as np
 
 
 class TrainSetLoader(Dataset):
-    def __init__(self, cfg):
+    def __init__(self, trainset_dir, scale_factor):
         super(TrainSetLoader, self).__init__()
-        self.dataset_dir = cfg.trainset_dir + '/patches_x' + str(cfg.scale_factor)
+        self.dataset_dir = trainset_dir + '/patches_x' + str(scale_factor)
         self.file_list = os.listdir(self.dataset_dir)
     def __getitem__(self, index):
         img_hr_left  = Image.open(self.dataset_dir + '/' + self.file_list[index] + '/hr0.png')

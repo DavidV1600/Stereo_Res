@@ -24,7 +24,8 @@ class SSRDEFNet_with_MHCA(nn.Module):
         self.init_feature = nn.Conv2d(3, 64, 3, 1, 1, bias=True)
         self.deep_feature = RDG(G0=64, C=4, G=24, n_RDB=4)
 
-        self.mhca1 = MHCA(n_feats=128, ratio=4)
+        self.mhca = MHCA(n_feats=128, ratio=2)
+        self.mhca_sec = MHCA(n_feats=128, ratio=2)
 
         self.pam = PAM(64)
         self.transition = nn.Sequential(
@@ -45,7 +46,7 @@ class SSRDEFNet_with_MHCA(nn.Module):
 
         self.reconstruct = RDG(G0=64, C=4, G=24, n_RDB=4)
 
-        self.mhca2 = MHCA(n_feats=64, ratio=4)
+        #self.mhca2 = MHCA(n_feats=64, ratio=4)
 
         self.upscale = nn.Sequential(
             nn.Conv2d(64, 64 * upscale_factor ** 2, 1, 1, 0, bias=True),
@@ -86,7 +87,7 @@ class SSRDEFNet_with_MHCA(nn.Module):
         buffer_right = self.deep_feature(buffer_right)
 
         buffer_concat = torch.cat([buffer_left, buffer_right], dim=1)  # Concatenate along channel dimension
-        buffer_attended = self.mhca1(buffer_concat)
+        buffer_attended = self.mhca(buffer_concat)
 
         buffer_left, buffer_right = torch.chunk(buffer_attended, 2, dim=1)
 
@@ -109,8 +110,11 @@ class SSRDEFNet_with_MHCA(nn.Module):
         buffer_leftF = self.reconstruct(buffer_leftF)
         buffer_rightF = self.reconstruct(buffer_rightF)
 
-        buffer_leftF = self.mhca2(buffer_leftF)
-        buffer_rightF = self.mhca2(buffer_rightF)
+        buffer_concat = torch.cat([buffer_leftF, buffer_rightF], dim=1)  # Concatenate along channel dimension
+        buffer_attended = self.mhca_sec(buffer_concat)
+
+        # Split the features back into left and right components
+        buffer_leftF, buffer_rightF = torch.chunk(buffer_attended, 2, dim=1)
 
         feat_left = self.upscale(buffer_leftF)
         feat_right = self.upscale(buffer_rightF)
@@ -395,6 +399,7 @@ class Stereo_feature(nn.Module):
         self.lastconv = nn.Sequential(convbn(160, 64, 3, 1, 1, 1),
                                       nn.PReLU(),
                                       nn.Conv2d(64, 64, kernel_size=1, padding=0, stride=1, bias=False))
+        self.mhca_3 = MHCA(n_feats=160, ratio=2)
 
     def forward(self, output_skip):
         output_branch1 = self.branch1(output_skip)
@@ -407,6 +412,7 @@ class Stereo_feature(nn.Module):
         output_branch3 = F.upsample(output_branch3, (output_skip.size()[2], output_skip.size()[3]), mode='bilinear')
 
         output_feature = torch.cat((output_skip, output_branch3, output_branch2, output_branch1), 1)
+        output_feature = self.mhca_3(output_feature)
         output_feature = self.lastconv(output_feature)
 
         return output_feature
